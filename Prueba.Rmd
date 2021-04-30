@@ -1,0 +1,21 @@
+---
+title: "Prueba"
+author: "Cesar Santos"
+date: "4/30/2021"
+output: 
+  html_document:
+    keep_md: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Prueba
+
+```{r , echo=TRUE}
+x <- seq(1,20,2)
+y <- x^2
+
+plot(x,y)
+```
