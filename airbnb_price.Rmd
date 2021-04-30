@@ -116,7 +116,8 @@ ggplot(data = data, aes(x=factor(room_type), y=price, fill = factor(room_type)))
 
 outliers <- data[c(6217, 6241:6244, 7783, 10642),c(21, 15, 29, 26)]
 outliers <- outliers[order(outliers$price), ] ## ordering data by price
-outliers
+
+kable(outliers) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = FALSE, font_size = 10) %>% scroll_box(width = "350px", height = "200px")
 
 ggplot(data = data[-c(6217, 6241:6244, 7783, 10642),], aes(x=factor(room_type), y=price, fill = factor(room_type))) +
   geom_boxplot() +
@@ -201,7 +202,8 @@ names(dates) <- c("hs_yr", "hs_mo", "fr_yr", "fr_mo",
 <div style="text align: justify">The we extract the years and month of every date column and get some value info.</dev>
 
 ```{r , echo=TRUE}
-head(dates)
+
+kable(as.data.frame(head(dates))) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = FALSE, font_size = 10) %>% scroll_box(width = "400px", height = "180px")
 ```
 
 <div style="text align: justify">Now we have a column for <mark>year and month when a host sign up, and the same for the last and first reviews</mark>. Then we can see **<mark>days between revies and days a host</mark>**, and finally the price per each instance.</dev>
@@ -442,7 +444,6 @@ summary(all_charvar)
 ## and host about
 
 all_charvar <- all_charvar[,-c(1:4)]
-all_charvar
 
 ## turn the blanck spaces into a character value
 all_charvar$host_response_time[all_charvar$host_response_time==""] <- "Not specified"
