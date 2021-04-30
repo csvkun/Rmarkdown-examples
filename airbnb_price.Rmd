@@ -1,0 +1,920 @@
+---
+title: "Xgboost model for predicting hosting prices"
+author: "Cesar Santos"
+date: "4/28/2021"
+output: 
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: yes #agrega el indice al inicio
+    toc_depth: '5' #asigna el número de subsecciones que se mostraran
+    number_sections: no #enumera las secciones
+vignette: |
+  %\VignetteIndexEntry{Background} 
+  %\VignetteEngine{knitr::rmarkdown} 
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r , echo=FALSE, warning=FALSE, include=FALSE, eval=TRUE}
+library(kableExtra)
+library(fastDummies)
+library(tidyr)
+library(ggplot2)
+library(devtools)
+library(gridExtra)
+library(GGally)
+library(ggrepel) # for signalize a label inside a ggplot
+library(tidyverse) # for pipe operator
+library(maps) # getting map information from google
+library(ggmap) # for making map plots
+library(factoextra)
+```
+In this document we'll analyze data about  <mark>Airbnb</mark> prices in the city of Athens, Greece. The steps listed in the table of contents, give a quick way to every part of this document.
+
+
+There's included the code on the chunks above the outputs, and under almost every graph, is a brief interpretation of each one.
+
+# Loading and analyzing data
+<div style="text align: justify">Fisrt we have to load the dataset and take a look into it.</dev>
+
+```{r , echo=TRUE}
+data <- read.csv("/Users/cesarsantos/Documents/00 Airbnb prices/airbnb_athens_data.csv")
+summary(data)
+
+#visualizing a scrolling table of the data
+## Character
+kable(data[1:50, ]) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = FALSE, font_size = 10) %>% scroll_box(width = "900px", height = "600px")
+```
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+data$price <- as.numeric(gsub("[$,]","",data$price)) ## romoving the dolar sign in price
+                                                     ## and turn into numeric to plot it
+
+ggplot(data = data, aes(x=price))+
+  geom_histogram(fill = "red", binwidth = 10)+
+  scale_x_continuous(breaks= seq(0, 8000, by=500))
+
+ggplot(data = data, aes(x=price))+
+  geom_histogram(fill = "red", binwidth = 10)+
+  scale_x_continuous(limits = c(0,500), breaks= seq(0, 8000, by=50))
+```
+
+<div style="text align: justify">The data set is composed by <mark>11263 instances</mark> and <mark>35 variables</mark>, between numeric and character type data. Some of this variables give identification info, some shows important dates, other shows the ratings gived by users that rent the stays and others give numeric data about the ammenities in the stay.</dev>
+
+<div style="text align: justify"><span style="color:red;">Histograms</span> show the trend of the prices, where the most are in the range between 25 - 75 USD. per night. Aditional we can view from the the first graph that there is some outliers in the data, e.g. the prices of 7000 USD, that don't make too much sense.</dev>
+
+<div style="text align: justify">From the summary and the box we can note that data have some things to fix, for example getting a correct format for the variables.</dev>
+
+
+
+# Processing data
+
+<div style="text align: justify">First of all we will process the numeric data and get some stats about the relation between the variables ans prices</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+################
+# Numeric data #
+################
+
+## Correlation with price
+numericVars <- which(sapply(data, is.numeric)) #index vector numeric variables
+numericVarNames <- names(numericVars) #saving names vector for use later on
+
+cat('There are', length(numericVars), 'numeric variables')
+
+all_numVar <- data[, numericVars]
+cor_numVar <- cor(all_numVar, use="pairwise.complete.obs") #correlations of all numeric variables
+
+## sort on decreasing correlations with SalePrice
+cor_sorted <- as.matrix(sort(cor_numVar[,'price'], decreasing = TRUE))
+
+## select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.04)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+library(corrplot)
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+
+```
+
+<div style="text align: justify">As we can see in the correlation plot above, the correlation between price and most of the numeric variables is <span style="color:blue;">high</span> and <span style="color:blue;">positive</span>, but in the other hand the <span style="color:red;">negative</span> correlation specialy with <span style="color:red;">number of reviews</span> and <span style="color:red;">reviews per month</span> sugest that when the **<mark>price increase the number of reviews trend to decrease</mark>** and viceversa, when the price decreases the number of reviews increase.</dev>
+
+<div style="text align: justify">For our porpouses the high correlation coeficient between the numeric variables like <span style="color:blue;">square feet</span>, <span style="color:blue;">bathrooms</span>, <span style="color:blue;">bedrooms</span>, <span style="color:blue;">accommodates</span> and <span style="color:blue;">beds</span>, shows that there is colinearity between this features and this coul make troubles when making predictions based on the data due to a <span style="color:red;">feature leakage</span> problem.</dev>
+
+<div style="text align: justify">Next we can look at some specif segments of the data, for example, one of the <mark>chatacter class</mark> features <span style="color:green;">the room type</span> is a label of the data, that let us know if a stay is a <mark>entire home or apartment, hotel room, private room or a shared room</mark> and this label exists for all instances of the data, so we can get 4 groups in the data.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+ggplot(data = data, aes(x=factor(room_type), y=price, fill = factor(room_type))) +
+  geom_boxplot() +
+  labs(x='Room Type') +
+  geom_text_repel(aes(label = ifelse(data$price>2000, rownames(data), ''))) ## displays the index
+                                                                            ## basis on a condition
+
+outliers <- data[c(6217, 6241:6244, 7783, 10642),c(21, 15, 29, 26)]
+outliers <- outliers[order(outliers$price), ] ## ordering data by price
+outliers
+
+ggplot(data = data[-c(6217, 6241:6244, 7783, 10642),], aes(x=factor(room_type), y=price, fill = factor(room_type))) +
+  geom_boxplot() +
+  labs(x='Room Type') +
+  geom_text_repel(data = data[-c(6217, 6241:6244, 7783, 10642),],aes(label = ifelse(price>=1000, rownames(data), ''))) ## displays the index
+      ## basis on a condition
+
+ggplot(data = data, aes(y=price, x=seq(1,nrow(data), 1), colour = factor(room_type)))+
+  geom_point()+
+  labs(x=NULL, colour = "Room type")+
+  geom_text_repel(aes(label = ifelse(price>2000, rownames(data), '')))
+```
+<div style="text align: justify">Last boxplot shows that still being some outliers in data, but prices of 500 - 1500 USD are much understandable, maybe there is somo arrendatary renting his house per month and put elevated prices for a full house monthly rent, or a familry rent a private room in a exclusive zone of the city, or some exclusive hotel puts their rooms in airbnb for get more clients in platforms where they don't have large presence. In the other hand we can see that in shared rooms exists an small amount of outliers, that make sense cause there are a low number of stays with this class. The scatter plot only confirm that the atypic values are the ones that has a price higher than 2000 USD.</dev>
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = data, aes(x=review_scores_rating, 
+                        fill = factor(room_type)))+
+  geom_bar(position = "dodge", width = 2) +
+  labs(fill = "Room type", x="Review scores rating")+
+  scale_x_continuous(limits = c(45,100), breaks = seq(45,100,5))
+
+ggplot(data = data, aes(y=price, x=bathrooms, colour = factor(room_type)))+
+  geom_point()+
+  labs(x="Number of bathrooms", colour = "Room type")+
+  scale_x_continuous(breaks = seq(0,10,1))+
+  scale_y_continuous(trans = "log10")
+```
+
+<div style="text align: justify">The bar plot shows that the <mark>entire home and apartments</mark> stays dominate the market and hotel rooms follows the same trend. Private rooms have more presence than hotel rooms in the number of ratings but the score ratings of hotel rooms are higher. <mark>From this we can conclude that the quality and amenities of the hotel rooms result in more confort place than the private rooms, it has sence because the private rooms have common places within a occupied house contrary to a hotel room a even an entire home/apt.</mark>.</dev>
+
+<div style="text align: justify">From the scatter graph we can conclude that the <span style="color:blue;">number of bathrooms</span> don't affect the <span style="color:green;">price</span> in a direct way. This is visible when the the price is very high and the number of bathrooms are low <mark>(between 1, 2 and 3)</mark>.</dev>
+
+## Dates as numeric data
+
+<div style="text align: justify">Now we're gonna explore the dates in tha data, the dataset give it to us in a <span style="color:green;">character class</span> feature.</dev>
+
+```{r , echo=TRUE}
+kable(data[1:20, c(7,27:28, 15)]) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = TRUE, font_size = 10) %>% scroll_box(width = "450px", height = "400px")
+
+```
+<div style="text align: justify">As we can see in box below, we have a column with info about the date of inscription of the host, and dates of the first and last time in where a guest make a review of the stay. In the other hand, the format is not in a correct way for process it in R, so whe're gonna fix it and then do some feature engineering to extrac more relevant information about they.</dev>
+
+```{r , echo=TRUE}
+## modifying dates to process them
+data$host_since <- gsub("-", "/", data$host_since)
+data$first_review <- gsub("-", "/", data$first_review)
+data$last_review <- gsub("-", "/", data$last_review)
+
+## days between revies
+as.numeric() %>% as.Date.character(x = data$last_review, format = "%Y/%m/%d") -
+  as.Date.character(x = data$first_review, format = "%Y/%m/%d") -> all_numVar$daysb_reviews
+
+## days as host
+as.numeric() %>% as.Date.character(x = data$last_review, format = "%Y/%m/%d") -
+  as.Date.character(x = data$host_since, format = "%Y/%m/%d") -> all_numVar$days_as_host
+
+## getting the year and month separated
+## host since variables
+hs_yr <-substring(data$host_since, first = 1, last = 4) ## extract a substrin from one to another in a character string
+hs_mo <- substring(data$host_since, first = 6, last = 7)
+
+## first review variable
+fr_yr <- substring(data$first_review, first = 1, last = 4)
+fr_mo <- substring(data$first_review, first = 6, last = 7)
+
+## last review variable
+lt_yr <- substring(data$last_review, first = 1, last = 4)
+lt_mo <- substring(data$last_review, first = 6, last = 7)
+
+## getting 
+dates <- data.frame(cbind(as.numeric(hs_yr), as.numeric(hs_mo), 
+                          as.numeric(fr_yr), as.numeric(fr_mo), 
+                          as.numeric(lt_yr), as.numeric(lt_mo), 
+                          all_numVar[25], all_numVar[26] ,data[21]))
+
+names(dates) <- c("hs_yr", "hs_mo", "fr_yr", "fr_mo",
+                  "lt_yr", "lt_mo", "daysb_reviews", "days_as_host","price")
+```
+
+<div style="text align: justify">From <span style="color:blue;">last review</span> and <span style="color:blue;">host since</span> we can get an estimate of <span style="color:green;">days as host</span>, and from <span style="color:blue;">last review</span> minus <span style="color:red;">first review</span> we can get the active days of a listing, stored in <span style="color:green;">days between reviews</span>.</dev>
+
+<div style="text align: justify">The we extract the years and month of every date column and get some value info.</dev>
+
+```{r , echo=TRUE}
+head(dates)
+```
+
+<div style="text align: justify">Now we have a column for <mark>year and month when a host sign up, and the same for the last and first reviews</mark>. Then we can see **<mark>days between revies and days a host</mark>**, and finally the price per each instance.</dev>
+
+<div style="text align: justify">By this moment we can chek if there is some missing information in dates.</dev>
+
+```{r , echo=TRUE}
+NA_Dates <- which(colSums(is.na(dates)) > 0)
+sort(colSums(sapply(dates[,NA_Dates], is.na)), decreasing = TRUE)
+```
+
+<div style="text align: justify">There's <span style="color:red;">2273 missing values in the reviews</span> and <span style="color:red;">2 missings in the host dates</span>, so we're gonna fix that missing values to bring some sense to the data.</dev>
+
+```{r , echo=TRUE}
+##  days os host
+dates$days_as_host <- as.numeric(dates$days_as_host)
+dates$days_as_host[is.na(dates$days_as_host)] <- 0
+dates$days_as_host[dates$days_as_host==0] <- round(mean(dates$days_as_host),0)
+
+## days between reviews
+dates$daysb_reviews <- as.numeric(dates$daysb_reviews)
+dates$daysb_reviews[is.na(dates$daysb_reviews)] <- -999
+obs_dbr <- dates$daysb_reviews[!dates$daysb_reviews==-999]
+dates$daysb_reviews[dates$daysb_reviews==-999] <- round(mean(obs_dbr), 0)
+```
+
+<div style="text align: justify">Once we have fixed the NA's we can view the data and make some inferences.</dev>
+  
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+## plot of price fluctuation by mothn and year
+p_y <- ggplot(data = dates[!is.na(dates$hs_yr),], 
+              aes(x=hs_yr, y=price))+
+  stat_summary(geom = "bar", fun = "mean", size = 1, fill='darkgreen')+
+  labs(x="Year", title = "Mean price per year", y="Price")+
+  stat_summary(aes(label=round(..y..,2)), fun=mean, geom="text", size=3,
+               vjust = -0.5)+
+  scale_x_continuous(n.breaks = 11)+
+  expand_limits(y=90)
+
+p_m <- ggplot(data = dates[!is.na(dates$hs_mo),], aes(x=as.factor(hs_mo), y=price))+
+  geom_bar(stat='summary', fill='darkgreen')+
+  labs(x="Month", y="Price", title = "Mean price per month")+
+  stat_summary(aes(label=round(..y..,2)), fun=mean, geom="text", size=3,
+               vjust = -0.5)+
+  expand_limits(y=100)
+
+
+grid.arrange(p_y, p_m)## matrix of plots
+```
+
+<div style="text align: justify">The <mark>mean price per year</mark> graph let us see that the prices have an upward trend, and more specifly in <mark>2011, 2012 and 2016</mark> had an augment in the prices, then past the <span style="color:green;">2016</span> the prices <span style="color:blue;">return</span> to a range between <span style="color:green;">64 - 65 USD</span>.</dev>
+
+<div style="text align: justify">In the second bar plot <mark>(mean price per month)</mark> we can see that <span style="color:green;">January</span>, <span style="color:green;">March</span>, <span style="color:green;">April</span>, <span style="color:green;">July</span> and <span style="color:green;">August</span> has a range of <span style="color:greem;">prices</span> more stable <mark>(60 - 69 USD)</mark>, but in <span style="color:red;">October</span> the prices are much <span style="color:red;">higher</span> than the others, then in <span style="color:green;">november</span> and <span style="color:green;">december</span> the prices drop to <span style="color:green;">70 USD</span>. So we can make focus on examining prices in <span style="color:red;">October</span>.</dev>
+
+```{r , echo=FALSE, eval=TRUE, include=FALSE, warning=FALSE, message=FALSE}
+## function to extrac the legend from a plot
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)}
+```
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+## plot of prices in 2011, 2012,2016 per moth
+
+p_y11 <- ggplot(data = dates[hs_yr==2011,], 
+                aes(x=hs_mo, y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2011)])))+
+  geom_bar(position = "dodge", stat = "summary")+
+  labs(x="Month", y="Price", title = "Mean price per month in 2011", fill = NULL)+
+  theme(legend.position = "none")+
+  scale_x_continuous(breaks = seq(1,12,1))+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_dodge2(width = 12), size = 1.5)
+
+p_y12 <- ggplot(data = dates[hs_yr==2012,], 
+                aes(x=hs_mo, y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2012)])))+
+  geom_bar(stat='summary', position = "dodge", width = .5)+
+  labs(x="Month", y="Price", title = "Mean price per month in 2012", fill = NULL)+
+  theme(legend.position = "none")+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_jitterdodge(jitter.width = 2), size = 1.5)+
+  scale_x_continuous(breaks = seq(1,12,1))
+
+p_y16 <- ggplot(data = dates[hs_yr==2016,], 
+                aes(x=as.factor(hs_mo), y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2016)])))+
+  geom_bar(stat='summary', position = "stack", width = .5)+
+  labs(x="Month", y="Price", title = "Mean price per month in 2016", fill = NULL)+
+  theme(legend.position = "none")+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_dodge2(width = 12), size = 1.5)
+
+leg_rt <- g_legend(ggplot(data = dates[hs_yr==2016,], 
+                          aes(x=as.factor(hs_mo), y=price,
+                              fill=factor(data$room_type[which(dates$hs_yr==2016)])))+
+                     geom_bar(stat='summary', position = "stack", width = .5)+
+                     labs(x="Month", y="Price", title = "Mean price per month in 2016", 
+                          fill = "Room Type")+
+                     stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge2(width = 12), size = 1.5))
+
+grid.arrange(p_y11, p_y12, p_y16, leg_rt, ncol=2)
+```
+
+### Information about specific dates
+
+<div style="text align: justify">In this section we can view the info about the years that call more the attention due to de augment in prices, so let's explore it.</dev>
+
+#### Year 2011
+<div style="text align: justify">The plot let us see that in 2011 there's no shared rooms in the market, additional to this we can conclude that:</dev>
+
+- Entire home and apartments own the market
+- Hotel rooms begin to enter the market and prices are a little low (<mark>March</mark>)
+- The private rooms get high prices in the month of <mark>June</mark>
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = dates[hs_yr==2011,], 
+                aes(x=hs_mo, y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2011)])))+
+  geom_bar(position = "dodge", stat = "summary")+
+  labs(x="Month", y="Price", title = "Mean price per month in 2011", fill = "Room type")+
+  theme(legend.position = "right")+
+  scale_x_continuous(breaks = seq(1,12,1))+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_dodge2(width = 12), size = 2.5)
+```
+
+#### Year 2012
+
+<div style="text align: justify">In 2012 we can highlight that the prices of hotel rooms are very much higher in almost every month which they appear (<mark>except in April</mark>).</dev>
+
+- Entire home and apartment still dominating the market (presence allong entire year)
+- In <span style="color:blue;">May</span> the <mark>private rooms</mark> get a higher prices than the entire home and aparments.
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = dates[hs_yr==2012,], 
+                aes(x=hs_mo, y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2012)])))+
+  geom_bar(stat='summary', position = "dodge", width = .5)+
+  labs(x="Month", y="Price", title = "Mean price per month in 2012", fill = "Room type")+
+  theme(legend.position = "right")+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_jitterdodge(jitter.width = 2), size = 2.5)+
+  scale_x_continuous(breaks = seq(1,12,1))
+```
+
+#### Year 2016
+
+<div style="text align: justify">This graph is interesting due to the fact that we can see that in <mark>October and August</mark> something is happening this year, some theorys could be: </dev>
+
+- In <span style="color:blue;">August</span> the four type of stays has very high prices, maybe there was a social event like a festival or a global convention that make the prices get higher.
+
+- The same for <span style="color:green;">November</span> this time only <span style="color:magenta;">Entire home/apt</span> and <span style="color:green;">Hotel rooms</span> get the upward trend.
+
+
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = dates[hs_yr==2016,], 
+                aes(x=as.factor(hs_mo), y=price,
+                    fill=factor(data$room_type[which(dates$hs_yr==2016)])))+
+  geom_bar(stat='summary', position = "stack", width = .5)+
+  labs(x="Month", y="Price", title = "Mean price per month in 2016", fill = "Room type")+
+  theme(legend.position = "right")+
+  stat_summary(aes(x = hs_mo, y = price, label = round(..y..,2)), geom = "label",
+               position = position_dodge2(width = 12), size = 2.5)
+```
+
+<div style="text align: justify">Let's take a look into this two months</dev>
+
+##### August
+
+```{r , echo=FALSE, include=FALSE, eval=TRUE}
+yr_16 <- cbind(dates[hs_yr==2016,], data$room_type[which(dates$hs_yr==2016)])
+names(yr_16) <- c("hs_yr","hs_mo","fr_yr","fr_mo","lt_yr","lt_mo","daysb_reviews",
+                  "days_as_host","price","room_type")
+```
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+Aug_16 <- yr_16[yr_16$hs_mo==8,]
+
+ggplot(data = Aug_16, aes(x=as.factor(room_type), y=price, fill = as.factor(room_type)))+
+  geom_col()+
+  labs(x=NULL, fill="Room type", title="August prices")+
+  stat_summary(aes(x = factor(room_type), y = price, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge(), size = 2.5)
+aug_ehp <- sum(Aug_16$price[Aug_16$room_type=="Entire home/apt"])
+aug_sr <- sum(Aug_16$price[Aug_16$room_type=="Shared room"])
+```
+<div style="text align: justify">Mean price of <span style="color:magenta;">Entire home/apt</span> is 43.05 but the sum of all prices is `r aug_ehp`, contrary to the case of <span style="color:purple;">Shared rooms</span> where the mean price is 5000 and the sum of all `r aug_sr`. So this means that there is one shared room with an extremely high price per night.</dev>
+
+##### October
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+Oc_16 <- yr_16[yr_16$hs_mo==10,]
+
+ggplot(data = Oc_16, aes(x=as.factor(room_type), y=price, fill = as.factor(room_type)))+
+  geom_col()+
+  labs(x=NULL, fill="Room type", title="October prices")+
+  stat_summary(aes(x = factor(room_type), y = price, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge(), size = 2.5)
+```
+
+<div style="text align: justify">The same thing occur in October, the prices for <span style="color:green;">Hotel rooms</span> are extremely high, we can say this because of the top of the bar and the high number of the mean, that sugest that theres is only <mark>4 or 5 listings</mark> but that listings have <mark>elevated prices</mark>.</dev>
+
+## Final steps for data process
+```{r , echo=TRUE}
+################################
+# introducing the imputed data #
+################################
+
+all_numVar$days_as_host <- dates$days_as_host
+all_numVar$daysb_reviews <- dates$daysb_reviews
+
+##################
+# Character data #
+##################
+
+char_var <- names(data[,sapply(data, is.character)])
+char_var
+
+cat('There are', length(char_var), 'remaining columns with character values')
+
+all_charvar <- data[,char_var]
+
+
+
+## as we have processed tha dates data so we're gonna drop this colums from this
+## character data
+
+all_charvar <- all_charvar[,-c(4,10:11)]
+summary(all_charvar)
+
+## droping no reelevant columns
+## like name, description, host name
+## and host about
+
+all_charvar <- all_charvar[,-c(1:4)]
+all_charvar
+
+## turn the blanck spaces into a character value
+all_charvar$host_response_time[all_charvar$host_response_time==""] <- "Not specified"
+
+
+## convert from "t" and "f" to "0" and "1"
+all_charvar$host_is_superhost <- ifelse(all_charvar$host_is_superhost=="t", 1, 0)
+all_charvar$host_identity_verified <- ifelse(all_charvar$host_identity_verified=="t", 1, 0)
+
+## changing the " " to "_"
+
+all_charvar$host_response_time <- gsub(" ", "_", x = all_charvar$host_response_time)
+all_charvar$room_type <- gsub(" ", "_", x = all_charvar$room_type)
+all_charvar$room_type <- gsub("/", "_", x = all_charvar$room_type)
+
+
+## merging data
+all_data <- cbind(all_numVar, all_charvar)
+
+##################
+# NA's treatment #
+##################
+
+NAcol <- which(colSums(is.na(all_data)) > 0) ## verify if there's NA's in a column, if yes store the
+                                         ## number of columns, if no just skip it
+
+
+sort(colSums(sapply(all_data[NAcol], is.na)), decreasing = TRUE) ## columns by ordered by
+                                                             ## amount of NA's
+
+cat('There are', length(NAcol), 'columns with missing values')
+
+all_data <- all_data[-11] ## removing square feet variable, because has too much NA's
+
+### imputing missing values for the rest of features
+all_data$review_scores_rating[is.na(all_data$review_scores_rating)] <- 0
+all_data$review_scores_rating[all_data$review_scores_rating==0] <- median(all_data$review_scores_rating)
+
+all_data$review_scores_accuracy[is.na(all_data$review_scores_accuracy)] <- 0
+all_data$review_scores_accuracy[all_data$review_scores_accuracy==0] <- round(mean(all_data$review_scores_accuracy), 0)
+
+all_data$review_scores_cleanliness[is.na(all_data$review_scores_cleanliness)] <- 0
+all_data$review_scores_cleanliness[all_data$review_scores_cleanliness==0] <- round(mean(all_data$review_scores_cleanliness),0)
+
+all_data$review_scores_checkin[is.na(all_data$review_scores_checkin)] <- 0
+all_data$review_scores_checkin[all_data$review_scores_checkin==0] <- round(mean(all_data$review_scores_checkin), 0)
+
+all_data$review_scores_communication[is.na(all_data$review_scores_communication)] <- 0
+all_data$review_scores_communication[all_data$review_scores_communication==0] <- round(mean(all_data$review_scores_communication), 0)
+
+all_data$review_scores_location[is.na(all_data$review_scores_location)] <- 0
+all_data$review_scores_location[all_data$review_scores_location==0] <- round(mean(all_data$review_scores_location), 0)
+
+all_data$reviews_per_month[is.na(all_data$reviews_per_month)] <- 0
+all_data$reviews_per_month[all_data$reviews_per_month==0] <- round(mean(all_data$reviews_per_month), 0)
+
+## deleting the minor NA's for the variables without a large amount of NA's
+all_data <- na.omit(all_data)
+
+##############################
+# Factor for multilevel data #
+##############################
+
+all_data$host_response_time <- as.factor(all_data$host_response_time)
+all_data$room_type <- as.factor(all_data$room_type)
+
+```
+
+
+## Cheking outliers
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+## plotting the data with outlier labeled
+ggplot(all_data, aes(x=days_as_host, y=price, colour = room_type))+
+  geom_point()+
+  geom_text_repel(aes(label = ifelse(price>2000, rownames(all_data), '')))+
+  geom_text_repel(aes(label = ifelse(days_as_host<0, rownames(all_data), '')))
+```
+<div style="text align: justify">The scatter plot show the label of instances with outliers, so next we will drop it and then we're gonna eliminate the columns that don't have importance.</dev>
+
+```{r , echo=TRUE}
+all_data <- all_data[-c(6217, 6241:6244, 7783, 1083,10642),] # deleting outliers for price and days as host
+all_data <- all_data[,-c(1:3)] # deleting the columns with no reelevant information
+```
+
+## Grouping data based on some characteristics
+
+```{r , echo=TRUE}
+###############################################
+# grouping data based on some characteristics #
+###############################################
+
+## median price by time of response
+all_data %>% group_by(host_response_time) %>% 
+  summarise(median = mean(price), counts=n()) %>% ## information about a selected grup
+  as.data.frame() -> response                       ## only works with summaryse() and mutate()
+
+## median price if host is o not a superhost
+all_data %>% group_by(host_is_superhost) %>% 
+  summarise(median=mean(price), counts=n()) %>% 
+  as.data.frame() -> superhosts
+
+## median price if host is or not identity verified
+all_data %>% group_by(host_identity_verified) %>% 
+  summarise(median=mean(price), counts=n()) %>% 
+  as.data.frame() -> host_identified
+```
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = response, aes(x=factor(host_response_time), y=counts, fill=host_response_time))+
+  geom_col()+
+  labs(fill= " Host response \n time", x=NULL)+
+  theme(axis.text.x = element_text(angle = 20))+
+  stat_summary(aes(x = factor(host_response_time), y = median, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge(), size = 2.5)
+```
+<div style="text align: justify">This plot show that the majority of hostes answer in fast, but call the attention that when they take longer time to response the prices seems to be <span style="color:red;"> more highers</span>.</dev>
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = superhosts, aes(x=factor(host_is_superhost), y=counts, fill=factor(host_is_superhost)))+
+  geom_col()+
+  labs(fill= " Superhost", x=NULL)+
+  stat_summary(aes(x = factor(host_is_superhost), y = median, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge(), size = 2.5)
+```
+
+```{r , echo=FALSE, eval=TRUE, include=TRUE, warning=FALSE, message=FALSE}
+ggplot(data = host_identified, aes(x=factor(host_identity_verified), y=counts, fill=factor(host_identity_verified)))+
+  geom_col()+
+  labs(fill= " Identity verified", x=NULL)+
+  stat_summary(aes(x = factor(host_identity_verified), y = median, label = round(..y..,2)), geom = "label",
+                                  position = position_dodge(), size = 2.5)
+```
+
+<div style="text align: justify">From last two plots we can conclude that <mark>when the host is a superhost, and have and identity verified the price tredns to be a little lower</mark>.</dev>
+
+## Getting the final data and spliting for training and test
+```{r , echo=TRUE}
+###################
+# dummy variables #
+###################
+library(fastDummies)
+hst_rsp_time <- as.data.frame(dummy_cols(all_data$host_response_time))
+colnames(hst_rsp_time) <- c("host_response_time", levels(factor(hst_rsp_time$.data)))
+
+roomtp <- as.data.frame(dummy_cols(all_data$room_type))
+colnames(roomtp) <- c("room_type", levels(factor(roomtp$.data)))
+
+colSums(hst_rsp_time[2:6])
+colSums(roomtp[2:5])
+
+##############
+# Final data #
+##############
+
+all_data <- all_data[,-c(23,26)]
+all_data <- cbind(all_data[-8], hst_rsp_time[3:6], roomtp[,2:4], all_data[8]) ## here we reorder the data
+             ## and put the target (price) as the final variable
+
+##################
+# splitting data #
+##################
+set.seed(2021)
+
+train_index <- round(nrow(all_data)*(0.90), 0)
+
+train_obs <- sample(1:nrow(all_data), train_index)
+
+train <- all_data[train_obs,]
+test <- all_data[-train_obs,]
+
+################
+# scaling data #
+################
+
+## min max scaling
+max_train <- apply(train, 2, max) # number mean by columns
+min_train <- apply(train, 2, min)
+
+
+## scaling train by min-max
+train_esc <- scale(train, center = min_train, 
+                   scale = max_train - min_train)
+
+## scaling the test set by the same factor of the train data
+## with attr we can acces to the center and the scale of the
+## scaled train data
+test_esc <- scale(test, center = attr(train_esc, "scaled:center"),
+                  scale = attr(train_esc, "scaled:scale"))
+
+```
+
+# Getting groups of data based on geo-localization data
+<div style="text align: justify">In this section we'll gona cluster the data, based on the geolocalization data present in the dataset. Making use of a <span style="color:green;">green</span> cluster algorithm we're gonna determine the <mark>optimal number os clusters</mark> and then we'll gonna apply it to our data.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+###########
+# k-means #
+###########
+athens <- get_map(location = "athens", zoom = 13) # getting the map of athens
+                                                  # from google
+
+## plotting the raw data
+ggmap(athens)+
+geom_point(data = all_data, aes(x=longitude, y=latitude))
+
+```
+<div style="text align: justify">The data without a cluster label, only shows the points mapped in a window. Next we'll have to run the K-means algorithm but before we'll make a test that sugets and optimal number of clusters.</dev>
+
+```{r , echo=TRUE}
+## grouping by localization
+
+geo_loc <- all_data[, c(3,2)]
+
+# estimating the number of clusters by using the factoextra
+# library
+
+fviz_nbclust(geo_loc, FUNcluster = kmeans, method = "silhouette")
+```
+
+<div style="text align: justify">As we can see the method sugest that the <mark>optimal number of clusters</mark> is <span style="color:red;">8</span>. So we'll use this number for the number of clusters to make.</dev>
+
+```{r , echo=FALSE, eval=TRUE, include=FALSE}
+geo_kmeans <- kmeans(x = geo_loc, centers = 8, trace = TRUE) # Applying the algorithm
+```
+
+```{r , echo=TRUE, eval=FALSE}
+geo_kmeans <- kmeans(x = geo_loc, centers = 8, trace = TRUE) # Applying the algorithm
+```
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+## Visualizing the results
+ggmap(athens)+
+  geom_point(data = all_data, aes(x=longitude, y=latitude, color=factor(geo_kmeans$cluster)))+
+  labs(color="Clusters")+
+  ggtitle("Athens city distribution of stays")
+```
+
+<div style="text align: justify">The result is satisfactory, the algorithm clearly separate the data in good form, this is proven by the non mixed points we can see in the plot.</dev>
+
+# Making predictions based on the data (XGBoost model)
+<div style="text align: justify">Now we're gonna use an algorithm called <span style="color:red;">XGBoost</span> or <mark>Extreme Gradient Boosting</mark>. This algorith also <mark> help us to see, what variables are more important to predict the price of an a stay</mark>.</dev>
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+#################
+# XGBoost model #
+#################
+library(Metrics)
+y_trainmean <- mean(train_esc[,31])
+
+min_obj <- rep(1, length(test_esc[,31]))*y_trainmean
+
+
+print(paste("Minimum MAE objective for scaled data is:", mae(test_esc[,31], min_obj)))
+
+## XGBoost for scaled data
+library(xgboost)
+params <- list(set.seed = 123,
+               eval_metric = "mae",
+               objective = "reg:squarederror"
+               )
+
+
+## Making the predictors matrix and the target for XGBoost
+
+data_train <- xgb.DMatrix(data = train_esc[,1:30], label = train_esc[,31])
+data_test <- xgb.DMatrix(data = test_esc[,1:30], label = test_esc[,31])
+
+model_xgb <- xgboost(data = data_train,
+                 label = data_train,
+                 params = params,
+                 nrounds = 100,
+                 verbose = 1)
+
+## predicting
+result <- predict(model_xgb, data_test)
+
+
+## plotting results
+res_comp <- cbind(test_esc[,31], result, result-test_esc[,31])
+
+res_comp <- as.data.frame(res_comp)
+
+res_comp$ind <- seq(1,nrow(res_comp),1)## setting an x axis
+
+## plotting the results vs expected
+p1 <- ggplot(data = res_comp)+
+  geom_line(data = res_comp, aes(x=ind, y=V1, color = "red"), shape="A")+
+  geom_line(data = res_comp, aes(x=ind, y=result, color = "blue"),shape = "+")+
+  labs(x="Index", y="Values", title="First Run of XGBoost")+
+  scale_y_continuous(limits = c(0,0.075))+
+  scale_x_continuous(limits = c(0,150), breaks = seq(0,250,10))+
+  scale_color_discrete(name = "Comparison", labels = c("Results", "Test"))
+
+p1
+```
+
+<div style="text align: justify">As we can see, the predicction almost got it, except for some points, where the results don't reach the high prices of a stay. Anyway there's a good result for only one run of the algoritm. Let's try a cross validation aproach and <mark>some tunning for hyper parameters</mark>.</dev>
+
+<div style="text align: justify">But first we'll take a look into the importance of the variables for the prediction.</dev>
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+imp_mat <- xgb.importance(feature_names = names(data_train), model = model_xgb, 
+                          data = data_train) ## importance matrix
+
+xgb.plot.importance(imp_mat, top_n = 30, plot = TRUE) ## plotting the importance 
+                                                      ## of the predictors
+
+```
+
+<div style="text align: justify">Here we can see that with the <span style="color:blue;">top 5</span> features we almost reach the <span style="color:blue;">90% of importance</span> for the <mark>prediction of the price (target)</mark>.</dev>
+
+## XGboost cross validation
+
+<div style="text align: justify">First, let's set a grid of HP for the cross validation approach.</dev>
+
+```{r , echo=TRUE}
+## cross validation for xgboost
+
+hpgrid <- expand.grid(max_depth = seq(3, 6, 1), eta = seq(.2, .35, .01)) ## hyperparameter
+                                                                         ## grid
+
+```
+
+<div style="text align: justify">In **hpgrid** we have a matrix of two columns, one values of <span style="color:red;">depth</span> <mark>from 3 to 6</mark> and combine every value with every value of **eta**(learning rate) from 0.2 to 0.35 with a step of 0.1.</dev>
+
+<div style="text align: justify">Now we can run the cv for <span style="color:blue;">XGBoost</span>.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+xgb_train_mae <- c() ## vector to store the mae for training
+xgb_test_mae <- c() ## vector  to store the mae for test
+
+## Cross validation for XGBosst applying different combination for hyper parameters
+for (j in 1:nrow(hpgrid)) {
+  set.seed(123)
+  m_xgb_untuned <- xgb.cv(
+    data = data_train,
+    label = data_train,
+    eval_metric = "mae",
+    nrounds = 100,
+    objective = "reg:squarederror",
+    early_stopping_rounds = 3,
+    nfold = 5,
+    max_depth = hpgrid$max_depth[j],
+    eta = hpgrid$eta[j],
+    verbose = 0 ## dont show the  progross
+  )
+  
+  xgb_train_mae[j] <- m_xgb_untuned$evaluation_log$train_mae_mean[m_xgb_untuned$best_iteration]
+  xgb_test_mae[j] <- m_xgb_untuned$evaluation_log$test_mae_mean[m_xgb_untuned$best_iteration]
+  
+  cat("Iteration",j, "\n")
+}
+```
+
+## Testing hyperparameters
+
+### Best validation set HP
+<div style="text align: justify">At now we can select the best values for training and validation sets.</dev>
+
+```{r , echo=TRUE}
+min_trmae_it <-which(xgb_train_mae==min(xgb_train_mae)) ## selecting the best iteration
+                                                        ## of the training in CV
+
+min_tstmae_it <- which(xgb_test_mae==min(xgb_test_mae)) ## selecting the best iteration
+                                                        ## of the validation set in CV
+
+bstdepth_val <- hpgrid[min_tstmae_it,1] ## best depth
+bsteta_val <- hpgrid[min_tstmae_it,2] ## best eta (learning rate)
+```
+
+<div style="text align: justify">Once we have that values, we can use those parameters for the algorithm and view the results.</dev>
+
+<div style="text align: justify">First we will try the best parameters for validation set.</dev>
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+## for best mae with validation set
+params2 <- list(set.seed = 123,
+                eval_metric = "mae",
+                objective = "reg:squarederror",
+                max_depth = bstdepth_val,
+                eta = bsteta_val)
+
+
+
+
+model_xgb2 <- xgboost(data = data_train,
+                  label = data_train,
+                  params = params2,
+                  nrounds = 100,
+                  verbose = 1)
+
+## predicting
+result2 <- predict(model_xgb2, data_test)
+
+## plotting results
+res_comp2 <- cbind(test_esc[,31], result2, result2-test_esc[,31])
+
+res_comp2 <- as.data.frame(res_comp2)
+
+res_comp2$ind <- seq(1,nrow(res_comp2),1)## setting an x axis
+
+## plot
+scat_best_val <- ggplot(data = res_comp2)+
+  geom_point(data = res_comp2, aes(x=ind, y=V1, color = "red"), shape="A")+
+  geom_point(data = res_comp2, aes(x=ind, y=result2, color = "blue"),shape = "+", 
+             size = 3)+
+  labs(x="Index", y="Values")+
+  scale_y_continuous(limits = c(0,0.075))+
+  scale_x_continuous(limits = c(0,150))+
+  scale_color_discrete(name = "With HP tunning", labels = c("Results", "Test"))
+
+p2 <- ggplot(data = res_comp2)+
+  geom_line(data = res_comp2, aes(x=ind, y=V1, color = "red"))+
+  geom_line(data = res_comp2, aes(x=ind, y=result2, color = "blue"))+
+  labs(x="Index", y="Values", title="Validation set HP")+
+  scale_y_continuous(limits = c(0,0.075))+
+  scale_x_continuous(limits = c(0,150), breaks = seq(0,250,10))+
+  scale_color_discrete(name = "With HP \n tunning", labels = c("Results", "Test"))
+
+scat_best_val
+grid.arrange(p1,p2)
+```
+
+<div style="text align: justify">As shown in the comparison of the two runs of the algorithm, with de validation set hyperparameters the line adjust more to the line of the test, but we haven't prove the best training set HP yet. </dev>
+
+### Best training set HP
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
+## for best mae with training set
+bstdepth_train <- hpgrid[min_trmae_it,1]
+bsteta_train <- hpgrid[min_trmae_it,2]
+
+params3 <- list(set.seed = 123,
+                eval_metric = "mae",
+                objective = "reg:squarederror",
+                max_depth = bstdepth_train,
+                eta = bsteta_train)
+
+model_xgb3 <- xgboost(data = data_train,
+                  label = train_esc[,18],
+                  params = params3,
+                  nrounds = 100,
+                  verbose = 1)
+
+## predicting
+result3 <- predict(model_xgb3, data_test)
+
+## plotting results
+res_comp3 <- cbind(test_esc[,31], result3, result3-test_esc[,31])
+
+res_comp3 <- as.data.frame(res_comp3)
+
+res_comp3$ind <- seq(1,nrow(res_comp3),1)## setting an x axis
+
+## plot
+scat_best_train <- ggplot(data = res_comp3)+
+  geom_point(data = res_comp3, aes(x=ind, y=V1, color = "red"))+
+  geom_point(data = res_comp3, aes(x=ind, y=result3, color = "blue"),shape = "+", 
+             size = 3)+
+  labs(x="Index", y="Values")+
+  scale_y_continuous(limits = c(0,0.075))+
+  scale_x_continuous(limits = c(0,150))+
+  scale_color_discrete(name = "With HP tunning \n on Training", labels = c("Results", "Test"))
+
+p3 <- ggplot(data = res_comp3)+
+  geom_line(data = res_comp3, aes(x=ind, y=V1, color = "red"))+
+  geom_line(data = res_comp3, aes(x=ind, y=result3, color = "blue"))+
+  labs(x="Index", y="Values", title="Training set HP")+
+  scale_y_continuous(limits = c(0,0.075))+
+  scale_x_continuous(limits = c(0,150), breaks = seq(0,250,10))+
+  scale_color_discrete(name = "With HP \n tunning", labels = c("Results", "Test"))
+
+grid.arrange(p1,p2,p3)
+```
+
+<div style="text align: justify">As we can see, there is no significant difference between <mark>the Validation and Training set hyperparameters</mark>, we can say that our model reach <span style="color:green;">good results</span>, maybe doing more feature ingineering or feeding more data to the model we can improve its performance.</dev>
