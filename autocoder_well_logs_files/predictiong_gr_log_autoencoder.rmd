@@ -1,30 +1,72 @@
+---
+title: "Predicting a GR log with an Autoencoder"
+author: "Cesar Santos"
+date: "5/4/2021"
+output: 
+  html_document:
+    keep_md: true
+    df_print: paged
+    toc: yes #agrega el indice al inicio
+    toc_depth: '5' #asigna el número de subsecciones que se mostraran
+    number_sections: no #enumera las secciones
+vignette: |
+  %\VignetteIndexEntry{Background} 
+  %\VignetteEngine{knitr::rmarkdown} 
+  %\VignetteEncoding{UTF-8}
+---
+<div style="text align: justify">In this example we're gonna analize and use the data of a well log to feed an autoencoder with the aim to predic some values for the GR curve.</dev>
+
+<div style="text align: justify">The dataset is called "North Sea" and is suplyed by the company <span style="color:green;">Geolink</span>.</dev>
+
+# Loding the data
+
+<div style="text align: justify">To read and manipulate the data, we're gonna use the <span style="color:red;">lastools</span> package, this package is listed in the <mark>Github</mark> repo of Gitmaxwell.</dev>
+
+```{r , echo=TRUE}
+library(keras)
 library(lastools)
 library(tidyverse)
 library(ggplot2)
 library(gridExtra)
 library(ggrepel)
-library(keras)
 
 well1 <- read_las(filepath = "https://github.com/csvkun/Rmarkdown-examples/raw/main/Data/35_3-1.las", replace_null = TRUE)
+```
 
-## exploring data
+# Exploring the data
+```{r , echo=TRUE}
 head(well1$LOG)
+```
 
-## storing the values in a data.frame
+<div style="text align: justify">We have 12 columns, that is to say we have 12 featurues, almost every feature is corresponing a log, except for the <mark>depth</mark> and <mark>lithology</mark> columns.</dev>
+
+<div style="text align: justify">Now that we have the data loaded into our environment we can extract the log values into a data frame to process it without altering the original data.</dev>
+
+```{r , echo=TRUE}
 data <- well1$LOG
+```
 
+<div style="text align: justify">Once the dataframe is created, we're gonna explore it. At first sight we note that there is missing data into our data frame, denoteds with NA's in the output of the head command.</dev>
+
+```{r , echo=TRUE}
 ## cheking for the presence of missing values
 colSums(sapply(data, is.na))
 
-## saving the missing values indexes for our target variable
+## saving the missing values indexes for the lithology variable
 na_index <- which(is.na(data$Lithology_geolink))
 
-## creating a data frame withouth missing values in out target
+## creating a data frame withouth missing values in lithology
 lit_clean <- data[-na_index, ]
 
 colSums(sapply(lit_clean, is.na)) ## verifying that our target is free of NA's
+```
 
-## generating a columng for the name of lithology
+
+<div style="text align: justify">Now we have out lithology column cleaned of NA's. As the <mark>lithology</mark> column is a multilevel factor inidcating the type of lithology, based on the documentation of the dataset we're gonna make a column with the name of the lithology for every instance label, and a column with the colour sugested by the documntation, this way we can next plot a specie of lithology column next to each log we could graph.</dev>
+
+```{r , echo=TRUE}
+## generating a columng for the name of lithology and one for the colour, this by
+## repeating the lithology column in the column bind command
 lit_clean <- cbind(lit_clean[1:2], lit_clean[2], lit_clean[2], lit_clean[3:12])
 names(lit_clean) <- c("DEPT","Lithology_label","Lithology_name","lit_color","CALI","DRHO","NPHI","RHOB","GR",
                       "DTC","RDEP","SP","RSHA","RMED")
@@ -33,7 +75,7 @@ names(lit_clean) <- c("DEPT","Lithology_label","Lithology_name","lit_color","CAL
 lit_clean$Lithology_name <- factor(lit_clean$Lithology_name)
 lit_clean$lit_color <- factor(lit_clean$lit_color)
 
-## giving names to the variables
+## giving names to instances
 levels(lit_clean$Lithology_name) <- list("Sandstone"= 1, 
                                          "Silty Sand"=2, 
                                          "Silt"=5,
@@ -44,18 +86,24 @@ levels(lit_clean$Lithology_name) <- list("Sandstone"= 1,
                                          "Marlstone"=13,
                                          "Calcareous Cement"=16,
                                          "Cinerite"=19)
-
+## giving color to each instance
 levels(lit_clean$lit_color) <- list("yellow"= 1, 
-                                    "lightyellow"=2, 
-                                    "lightsalmon"=5,
-                                    "gold2"=6,
-                                    "darkgreen"=7,
-                                    "slateblue"=9,
-                                    "dodgerblue"=12,
-                                    "deepskyblue"=13,
-                                    "cyan"=16,
-                                    "cyan"=19)
+                                         "lightyellow"=2, 
+                                         "lightsalmon"=5,
+                                         "gold2"=6,
+                                         "darkgreen"=7,
+                                         "slateblue"=9,
+                                         "dodgerblue"=12,
+                                         "deepskyblue"=13,
+                                         "cyan"=16,
+                                         "cyan"=19)
+```
 
+<div style="text align: justify">Now we can plot some information to visualize it.</dev>
+
+## Visualizing data
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
 ## For the colors of lithology 
 
 colors = c("yellow", "lightyellow", "lightsalmon", "gold2", "darkgreen", "slateblue", "dodgerblue",
@@ -75,25 +123,17 @@ col1 <- ggplot(lit_clean, aes(y=DEPT, fill=lit_color)) +
   scale_fill_discrete(labels = levels(lit_clean$Lithology_name), type = colors)
 
 grid.arrange(p1,col1, ncol=2)
+```
 
+<div style="text align: justify">Now let's make some visual exploration of the data, just to get some insights about it.</dev>
 
+```{r , echo=TRUE}
+boxplot(lit_clean$DEPT~lit_clean$Lithology_name, las=2,xlab = " ", ylab = "Depth")
+```
 
-###################
-## Specific zone ##
-###################
+<div style="text align: justify">The box plot show that the're is some argillaceous limastones far from to the others, because of it, the box plot treat it like an outlier. Let's take a look at it.</dev>
 
-# ggplot(lit_clean, aes(y=DEPT, x=GR,)) +
-#   geom_line(orientation = "y")+
-#   geom_area(orientation = "y", data = lit_clean[lit_clean$Lithology_name=="Sandstone"&lit_clean$DEPT<1000, ], 
-#             fill="yellow")
-
-#########################
-## expploring tha data ##
-#########################
-
-boxplot(lit_clean$DEPT~lit_clean$Lithology_name, las=2,xlab = "Lythology", ylab = "Depth")
-
-## outliers of lithology
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
 ggplot(data = lit_clean[lit_clean$Lithology_name=="Argillaceous Limestone",],
        aes(x=Lithology_name, y=DEPT))+
   geom_point()+
@@ -101,9 +141,28 @@ ggplot(data = lit_clean[lit_clean$Lithology_name=="Argillaceous Limestone",],
                   aes(label = ifelse(DEPT>4000,
                                      DEPT,
                                      "")))
+```
+<div style="text align: justify">With the last plot we can view that the outliers are in the range of <mark>4100</mark> depth of the log, so we can check this specific zone.</dev>
 
-## plotting data and lithology
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
+outplot1 <- ggplot(lit_clean, aes(y=DEPT, x=GR)) +
+  geom_line(orientation = "y", color="darkgreen")+
+  scale_y_reverse(limits=c(4200,4000))
 
+outplot2 <- ggplot(lit_clean, aes(y=DEPT, fill=lit_color)) +
+  geom_bar()+
+  scale_y_reverse()+
+  ylim(4200,4000) +
+  labs(fill="Lithology", color=NULL, x="Lit", y=NULL)+
+  scale_fill_discrete(labels = levels(lit_clean$Lithology_name), type = colors)+
+  scale_x_continuous(breaks = c(0,1))
+
+grid.arrange(outplot1, outplot2, ncol=2)
+```
+
+<div style="text align: justify">Yes there are the argillaceous limestones in the range viewed from the dot plot. Once we have notticed the outliers we can explore a larger amoun of data, a little bit shallower and a bit deeper of the outliers range.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
 GR_33 <- ggplot(lit_clean, aes(y=DEPT, x=GR)) +
   geom_line(orientation = "y", color="darkgreen")+
   scale_y_reverse(limits=c(4400,3800))
@@ -121,39 +180,16 @@ BD_33 <- ggplot(lit_clean, aes(y=DEPT, x=RHOB)) +
   scale_y_reverse(limits=c(4400,3800))+
   labs(y=NULL)
 
-# RL_33 <- ggplot(lit_clean, aes(y=DEPT, x=RSHA)) +
-#   geom_line(orientation = "y")+
-#   geom_line(aes(y=DEPT, x=RMED), color="blue", orientation = "y")+
-#   geom_line(aes(y=DEPT, x=RDEP), color="green", orientation = "y")+
-#   scale_y_reverse(limits=c(2200,2000))+
-#   scale_x_continuous(limits = c(0,10))+
-#   labs(y=NULL)
-#   
-
 grid.arrange(GR_33, BD_33,Lit_33, ncol=3)
+```
 
+<div style="text align: justify">Let's choose this range for train our autoencoder.</dev>
 
-## for highlighting a specific zone
-ggplot(data=lit_clean, aes(x=GR, y=DEPT))+
-  geom_line(orientation = "y",color="darkgreen")+
-  ylim(3700,3500)+
-  geom_hline(yintercept = 3600, color="blue", size=.5)+
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 3600, fill="blue", alpha=0.2)
+# Selecting the data to use for train and test
 
+<div style="text align: justify">These are the common steps to prepare the final data to use. </dev>
 
-###### two x axis with diferent scale
-# ggplot(data=lit_clean, aes(x=GR, y=DEPT))+
-#   geom_line(orientation = "y",color="darkgreen")+
-#   ylim(1200,1000)+
-#   geom_hline(yintercept = 3600, color="blue", size=.5)+
-#   scale_x_continuous(limits = c(20,120), breaks = seq(20,120,20),
-#                      sec.axis = sec_axis(~ . - 100, breaks = seq(-80,20,20)))+
-#   geom_line(aes(x=SP, y=DEPT), color="red", orientation = "y")
-
-#####################
-## processing data ##
-#####################
-
+```{r , echo=TRUE}
 data <- lit_clean[match(3800, as.integer(lit_clean$DEPT)):match(max(lit_clean$DEPT), lit_clean$DEPT),]
 
 x <- data[5:14]
@@ -161,11 +197,19 @@ x <- data[5:14]
 x <- x[,-c(3,8,9)]
 
 summary(x)
+```
 
+<div style="text align: justify">We can note that there's an small amount of NA's in the DTC log, let's fix it.</dev>
+
+```{r , echo=TRUE}
 ## imputing the mean in places where there's previous NA's
 x$DTC[is.na(x$DTC)] <- 0
 x$DTC[x$DTC==0] <- mean(x$DTC)
+```
 
+<div style="text align: justify">Once we have imputted the data, we can split data for training and test.</dev>
+
+```{r , echo=TRUE}
 ##################
 # splitting data #
 ##################
@@ -196,8 +240,14 @@ train_esc <- scale(train, center = min_train,
 ## scaled train data
 test_esc <- scale(test, center = attr(train_esc, "scaled:center"),
                   scale = attr(train_esc, "scaled:scale"))
+```
 
+# Setting up our autoencoder
 
+<div style="text align: justify">At this moment, we have our data ready to  feed an autoencoder, due to the fact that <mark>an autoencoder doesn't need a target objective</mark>, we will use the training and test set with all the extension of the features, and pass as <span style="color:blue;">y</span> the same training set.</dev>
+
+## Autoencoder
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
 #######################
 ## autoencoder model ##
 #######################
@@ -213,6 +263,8 @@ model <- keras_model_sequential()
 
 model %>% layer_dense(units = 5, input_shape = ncol(x), 
                       activation = "relu") %>% 
+  layer_dense(units = 3, activation = "relu") %>%
+  layer_dense(units = 1, activation = "relu") %>% 
   layer_dense(units = 3, activation = "relu") %>% 
   layer_dense(units = 5, activation = "sigmoid") %>% 
   layer_dense(units = ncol(x))
@@ -257,22 +309,28 @@ ae_plot <- ggplot(data = as.data.frame(ae_comp), aes(
                       values =c('blue'='blue','red'='red'), labels = c('Result','Test'))
 
 ae_plot
+```
 
+### Cross validation
 
+<div style="text align: justify">Next we'll use a cross validation approach, this to find an optimal number of epochs in out model to avoid overfitting.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
 ##################################
 # k-fold cross validation for ae #
 ##################################
 
-k <- 10
+k <- 5
 indices <- sample(1:nrow(train_esc))
 folds <- cut(indices, breaks = k, labels = FALSE) 
 
 ################
-## 100 epochs ##
+## 400 epochs ##
 ################
 
-num_epochs <- 100
-all_scores <- c()
+num_epochs <- 400
+# all_scores <- c()
+all_mae_histories <- NULL
 
 build_model <- function() {
   model <- keras_model_sequential() %>% 
@@ -286,36 +344,6 @@ build_model <- function() {
                     metrics = c("mae")
   )
 }
-
-
-
-for (i in 1:k) {
-  cat("processing fold #", i, "\n")
-  
-  val_indices <- which(folds == i, arr.ind = TRUE)
-  val_data <- train_esc[val_indices,]
-  val_targets <- train_esc[val_indices,]
-  partial_train_data <- train_esc[-val_indices,]
-  partial_train_targets <- train_esc[-val_indices,]
-  
-  model <- build_model()
-  
-  model %>% fit(x=partial_train_data, y=partial_train_targets,
-                epochs = num_epochs, batch_size = 32, verbose = 1)
-  
-  results <- model %>% evaluate(val_data, val_targets, verbose = 1)
-  all_scores <- c(all_scores, results[2])
-}
-
-mean(all_scores)
-
-################
-## 500 epochs ##
-################
-
-num_epochs <- 500
-all_mae_histories <- NULL
-
 
 for (i in 1:5) {
   cat("processing fold #", i, "\n")
@@ -342,26 +370,31 @@ average_mae_history <- data.frame(
   epoch = seq(1:ncol(all_mae_histories)),
   validation_mae = apply(all_mae_histories, 2, mean))
 
+```
 
+<div style="text align: justify">Now let's plot the mae's history to find the lower value and the number of epochs.</dev>
+
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
 ## better number of epochs
 ggplot(average_mae_history, aes(x = epoch, y = validation_mae)) + geom_smooth() +
   geom_vline(xintercept = seq(0,500,25), colour="darkgrey", alpha=0.4)+
-  geom_vline(xintercept = 137, colour="red")
+  geom_vline(xintercept = 112, colour="red")
+```
 
 
-#####################################
-## models with optimal # of epochs ##
-#####################################
+<div style="text align: justify">The plot tell us that beyond the 112 epochs, the model starts to overfitting and then the curve flattens, so we can use this number as the optimal.</dev>
 
-#############
-## model 1 ##
-#############
+## Models with the optimal number of epochs.
+<div style="text align: justify">Once we have defined an optimal number of epochs, we can check what optimizer gets a better result. The most populars for regression tasks are <mark>rmsprop</mark> and <mark>adam</mark> optimizer, so let's try whit these two. Aggregate to this we now reduce the number of <mark>neurons</mark> for the bottle neck of the autoencoder.</dev>
 
+### Rmsprop optimizer
+
+```{r , echo=TRUE, warning=FALSE, message=FALSE}
 ## same as the first one model, but with optimal
 ## number of epochs
 
 
-epochs <- 137
+epochs <- 112
 
 model1 <- keras_model_sequential()
 
@@ -411,11 +444,11 @@ ae_plot_1 <- ggplot(data = as.data.frame(ae_comp_1), aes(
                       values =c('blue'='blue','red'='red'), labels = c('Result','Test'))
 
 ae_plot_1
+```
 
-#############
-## model 2 ##
-#############
+### Adam optimizer
 
+```{r , echo=TRUE}
 model2 <- keras_model_sequential()
 
 model2 %>% layer_dense(units = 5, input_shape = ncol(x), 
@@ -464,12 +497,16 @@ ae_plot_2 <- ggplot(data = as.data.frame(ae_comp_2), aes(
                       values =c('blue'='blue','red'='red'), labels = c('Result','Test'))
 
 ae_plot_2
+```
 
-mae2
-mae1
+# Comparing results
 
-#######################
-## comparing results ##
-#######################
+```{r , echo=TRUE}
+
+cat("The mae for the model of with rmsprops optimizer is:", mae1[1], 
+    "\n and for the model with adam optimizer is:", mae2[1])
 
 grid.arrange(ae_plot_1, ae_plot_2)
+```
+
+
