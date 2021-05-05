@@ -27,43 +27,10 @@ vignette: |
 library(keras)
 library(lastools)
 library(tidyverse)
-```
-
-```
-## ── Attaching packages ─────────────────────────────────────── tidyverse 1.3.1 ──
-```
-
-```
-## ✓ ggplot2 3.3.3     ✓ purrr   0.3.4
-## ✓ tibble  3.1.1     ✓ dplyr   1.0.5
-## ✓ tidyr   1.1.3     ✓ stringr 1.4.0
-## ✓ readr   1.4.0     ✓ forcats 0.5.1
-```
-
-```
-## ── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
-## x dplyr::filter() masks stats::filter()
-## x dplyr::lag()    masks stats::lag()
-```
-
-```r
 library(ggplot2)
 library(gridExtra)
-```
-
-```
-## 
-## Attaching package: 'gridExtra'
-```
-
-```
-## The following object is masked from 'package:dplyr':
-## 
-##     combine
-```
-
-```r
 library(ggrepel)
+library(kableExtra)
 
 well1 <- read_las(filepath = "https://github.com/csvkun/Rmarkdown-examples/raw/main/Data/35_3-1.las", replace_null = TRUE)
 ```
@@ -73,23 +40,102 @@ well1 <- read_las(filepath = "https://github.com/csvkun/Rmarkdown-examples/raw/m
 ##  [1] 19 20 21 22 23 24 25 26 27 28 29 30
 ```
 
-```
-## Warning in data.table::fread(lines, showProgress = FALSE): Detected 1 column
-## names but the data has 12 columns (i.e. invalid file). Added 11 extra default
-## column names at the end.
-```
-
 # Exploring the data
 
 ```r
-head(well1$LOG)
+kable(well1$LOG[1:5, ]) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = FALSE, font_size = 10) %>% scroll_box(width = "500px", height = "150px")
 ```
 
-<div data-pagedtable="false">
-  <script data-pagedtable-source type="application/json">
-{"columns":[{"label":[""],"name":["_rn_"],"type":[""],"align":["left"]},{"label":["DEPT"],"name":[1],"type":["dbl"],"align":["right"]},{"label":["Lithology_geolink"],"name":[2],"type":["dbl"],"align":["right"]},{"label":["CALI"],"name":[3],"type":["dbl"],"align":["right"]},{"label":["DRHO"],"name":[4],"type":["dbl"],"align":["right"]},{"label":["NPHI"],"name":[5],"type":["dbl"],"align":["right"]},{"label":["RHOB"],"name":[6],"type":["dbl"],"align":["right"]},{"label":["GR"],"name":[7],"type":["dbl"],"align":["right"]},{"label":["DTC"],"name":[8],"type":["dbl"],"align":["right"]},{"label":["RDEP"],"name":[9],"type":["dbl"],"align":["right"]},{"label":["SP"],"name":[10],"type":["dbl"],"align":["right"]},{"label":["RSHA"],"name":[11],"type":["dbl"],"align":["right"]},{"label":["RMED"],"name":[12],"type":["dbl"],"align":["right"]}],"data":[{"1":"511.8991","2":"NA","3":"19.981","4":"0.13189726","5":"NA","6":"2.135","7":"53.75876","8":"187.929","9":"2.548965","10":"36.89725","11":"1.902004","12":"1.902000","_rn_":"1"},{"1":"512.0515","2":"NA","3":"19.277","4":"0.10493191","5":"NA","6":"2.104","7":"53.07347","8":"183.828","9":"2.373984","10":"36.96041","11":"1.922005","12":"1.922000","_rn_":"2"},{"1":"512.2039","2":"NA","3":"18.991","4":"0.08798398","5":"NA","6":"2.077","7":"52.31174","8":"190.956","9":"2.332967","10":"36.81390","11":"1.934004","12":"1.934000","_rn_":"3"},{"1":"512.3563","2":"NA","3":"18.919","4":"0.08395995","5":"NA","6":"2.066","7":"52.18380","8":"189.629","9":"2.250994","10":"36.54012","11":"1.945004","12":"1.945000","_rn_":"4"},{"1":"512.5087","2":"NA","3":"18.762","4":"0.07393192","5":"NA","6":"2.042","7":"53.08735","8":"187.120","9":"2.236021","10":"36.57061","11":"1.956004","12":"1.956000","_rn_":"5"},{"1":"512.6611","2":"NA","3":"18.583","4":"0.05691990","5":"NA","6":"2.025","7":"54.75865","8":"173.579","9":"2.287019","10":"36.93539","11":"1.967004","12":"1.967004","_rn_":"6"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
+<div style="border: 1px solid #ddd; padding: 0px; overflow-y: scroll; height:150px; overflow-x: scroll; width:500px; "><table class="table table-condensed table-striped" style="font-size: 10px; width: auto !important; margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> DEPT </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> Lithology_geolink </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> CALI </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> DRHO </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> NPHI </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> RHOB </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> GR </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> DTC </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> RDEP </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> SP </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> RSHA </th>
+   <th style="text-align:right;position: sticky; top:0; background-color: #FFFFFF;"> RMED </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:right;"> 511.8991 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 19.981 </td>
+   <td style="text-align:right;"> 0.1318973 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 2.135 </td>
+   <td style="text-align:right;"> 53.75876 </td>
+   <td style="text-align:right;"> 187.929 </td>
+   <td style="text-align:right;"> 2.548965 </td>
+   <td style="text-align:right;"> 36.89725 </td>
+   <td style="text-align:right;"> 1.902004 </td>
+   <td style="text-align:right;"> 1.902 </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;"> 512.0515 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 19.277 </td>
+   <td style="text-align:right;"> 0.1049319 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 2.104 </td>
+   <td style="text-align:right;"> 53.07347 </td>
+   <td style="text-align:right;"> 183.828 </td>
+   <td style="text-align:right;"> 2.373984 </td>
+   <td style="text-align:right;"> 36.96041 </td>
+   <td style="text-align:right;"> 1.922005 </td>
+   <td style="text-align:right;"> 1.922 </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;"> 512.2039 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 18.991 </td>
+   <td style="text-align:right;"> 0.0879840 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 2.077 </td>
+   <td style="text-align:right;"> 52.31174 </td>
+   <td style="text-align:right;"> 190.956 </td>
+   <td style="text-align:right;"> 2.332967 </td>
+   <td style="text-align:right;"> 36.81390 </td>
+   <td style="text-align:right;"> 1.934004 </td>
+   <td style="text-align:right;"> 1.934 </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;"> 512.3563 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 18.919 </td>
+   <td style="text-align:right;"> 0.0839600 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 2.066 </td>
+   <td style="text-align:right;"> 52.18380 </td>
+   <td style="text-align:right;"> 189.629 </td>
+   <td style="text-align:right;"> 2.250994 </td>
+   <td style="text-align:right;"> 36.54012 </td>
+   <td style="text-align:right;"> 1.945005 </td>
+   <td style="text-align:right;"> 1.945 </td>
+  </tr>
+  <tr>
+   <td style="text-align:right;"> 512.5087 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 18.762 </td>
+   <td style="text-align:right;"> 0.0739319 </td>
+   <td style="text-align:right;"> NA </td>
+   <td style="text-align:right;"> 2.042 </td>
+   <td style="text-align:right;"> 53.08735 </td>
+   <td style="text-align:right;"> 187.120 </td>
+   <td style="text-align:right;"> 2.236021 </td>
+   <td style="text-align:right;"> 36.57061 </td>
+   <td style="text-align:right;"> 1.956004 </td>
+   <td style="text-align:right;"> 1.956 </td>
+  </tr>
+</tbody>
+</table></div>
 
 <div style="text align: justify">We have 12 columns, that is to say we have 12 featurues, almost every feature is corresponing a log, except for the <mark>depth</mark> and <mark>lithology</mark> columns.</dev>
 
@@ -269,7 +315,7 @@ BD_33 <- ggplot(lit_clean, aes(y=DEPT, x=RHOB)) +
   scale_y_reverse(limits=c(4400,3800))+
   labs(y=NULL)
 
-grid.arrange(GR_33, BD_33,Lit_33, ncol=3)
+grid.arrange(GR_33, BD_33,Lit_33, ncol=3, widths=c(.7,.6,1))
 ```
 
 ![](predictiong_gr_log_autoencoder_files/figure-html/unnamed-chunk-10-1.png)<!-- -->
@@ -435,8 +481,8 @@ mae
 ```
 
 ```
-##        loss         mse 
-## 0.049831163 0.007697879
+##       loss        mse 
+## 0.08568274 0.01850842
 ```
 
 ```r
@@ -461,6 +507,7 @@ ae_plot
 ```
 
 ![](predictiong_gr_log_autoencoder_files/figure-html/unnamed-chunk-14-2.png)<!-- -->
+<div style="text align: justify">The results are no good, as shown in the plot, the model trends to underfitting and the results leave it in clear, there's no need to say it, <span style="color:red;">the curve of the results don't adjust with the expectec values of test</span>,but with a little more exprimentation we can get a better model to reach our objectives.</dev>
 
 ### Cross validation
 
@@ -540,13 +587,13 @@ average_mae_history <- data.frame(
 ## better number of epochs
 ggplot(average_mae_history, aes(x = epoch, y = validation_mae)) + geom_smooth() +
   geom_vline(xintercept = seq(0,500,25), colour="darkgrey", alpha=0.4)+
-  geom_vline(xintercept = 112, colour="red")
+  geom_vline(xintercept = 111, colour="red")
 ```
 
 ![](predictiong_gr_log_autoencoder_files/figure-html/unnamed-chunk-16-1.png)<!-- -->
 
 
-<div style="text align: justify">The plot tell us that beyond the 112 epochs, the model starts to overfitting and then the curve flattens, so we can use this number as the optimal.</dev>
+<div style="text align: justify">The plot tell us that beyond the 111 epochs, the model starts to overfitting and then the curve flattens, so we can use this number as the optimal.</dev>
 
 ## Models with the optimal number of epochs.
 <div style="text align: justify">Once we have defined an optimal number of epochs, we can check what optimizer gets a better result. The most populars for regression tasks are <mark>rmsprop</mark> and <mark>adam</mark> optimizer, so let's try whit these two. Aggregate to this we now reduce the number of <mark>neurons</mark> for the bottle neck of the autoencoder.</dev>
@@ -557,9 +604,9 @@ ggplot(average_mae_history, aes(x = epoch, y = validation_mae)) + geom_smooth() 
 ```r
 ## same as the first one model, but with optimal
 ## number of epochs
+set.seed(2021)
 
-
-epochs <- 112
+epochs <- 111
 
 model1 <- keras_model_sequential()
 
@@ -618,7 +665,7 @@ mae1
 
 ```
 ##       loss        mse 
-## 0.06372682 0.01270049
+## 0.05374057 0.00838880
 ```
 
 ```r
@@ -648,6 +695,7 @@ ae_plot_1
 
 
 ```r
+set.seed(2021)
 model2 <- keras_model_sequential()
 
 model2 %>% layer_dense(units = 5, input_shape = ncol(x), 
@@ -709,7 +757,7 @@ mae2
 
 ```
 ##        loss         mse 
-## 0.031376809 0.003649878
+## 0.032643124 0.003745955
 ```
 
 ```r
@@ -750,24 +798,27 @@ cat("The mae for the model of with rmsprops optimizer is:", mae1[1],
 ```
 
 ```
-## The mae for the model of with rmsprops optimizer is: 0.06372682 
-##  and for the model with adam optimizer is: 0.03137681
+## The mae for the model of with rmsprops optimizer is: 0.05374057 
+##  and for the model with adam optimizer is: 0.03264312
 ```
+
 
 ```r
 grid.arrange(ae_plot_1, ae_plot_2)
 ```
 
-```
-## Warning: Removed 282 row(s) containing missing values (geom_path).
+![](predictiong_gr_log_autoencoder_files/figure-html/unnamed-chunk-20-1.png)<!-- -->
+<div style="text align: justify">That's interesting, and as we can see the optimizer affects in a very strong way the learning of our model (beginning with the fact that we use the defauls params of each one), in the next table there's a listing of some of the paramaters:</dev>
 
-## Warning: Removed 282 row(s) containing missing values (geom_path).
 
-## Warning: Removed 282 row(s) containing missing values (geom_path).
+Optimizer    param1      param2       param3         result
+---------    --------    ---------    -----------    ---------------
+rmsprop      lr=0.001    rho=0.9      decay=0        mae=0.0537406
+adam         lr=0.001    beta1=0.9    beta2=0.999    mae=0.0326431
 
-## Warning: Removed 282 row(s) containing missing values (geom_path).
-```
 
-![](predictiong_gr_log_autoencoder_files/figure-html/unnamed-chunk-19-1.png)<!-- -->
+
+
+<div style="text align: justify">We can conclude that the adam optimizer give us better results than the rmsprop optimizer for this type of data. As shown in the last plot, the curve adjust with more accuracy in the adam optimizer plot. And the mae sugest that there's a better performance with it, although there is not a big difference between the two metrics, there is hardly 0.0210974.</dev>
 
 

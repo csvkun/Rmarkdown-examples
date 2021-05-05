@@ -22,20 +22,21 @@ vignette: |
 
 <div style="text align: justify">To read and manipulate the data, we're gonna use the <span style="color:red;">lastools</span> package, this package is listed in the <mark>Github</mark> repo of Gitmaxwell.</dev>
 
-```{r , echo=TRUE}
+```{r , echo=TRUE, message=FALSE, warning=FALSE}
 library(keras)
 library(lastools)
 library(tidyverse)
 library(ggplot2)
 library(gridExtra)
 library(ggrepel)
+library(kableExtra)
 
 well1 <- read_las(filepath = "https://github.com/csvkun/Rmarkdown-examples/raw/main/Data/35_3-1.las", replace_null = TRUE)
 ```
 
 # Exploring the data
 ```{r , echo=TRUE}
-head(well1$LOG)
+kable(well1$LOG[1:5, ]) %>% kable_styling(bootstrap_options = c("condensed", "striped"), full_width = FALSE, font_size = 10) %>% scroll_box(width = "500px", height = "150px")
 ```
 
 <div style="text align: justify">We have 12 columns, that is to say we have 12 featurues, almost every feature is corresponing a log, except for the <mark>depth</mark> and <mark>lithology</mark> columns.</dev>
@@ -180,7 +181,7 @@ BD_33 <- ggplot(lit_clean, aes(y=DEPT, x=RHOB)) +
   scale_y_reverse(limits=c(4400,3800))+
   labs(y=NULL)
 
-grid.arrange(GR_33, BD_33,Lit_33, ncol=3)
+grid.arrange(GR_33, BD_33,Lit_33, ncol=3, widths=c(.7,.6,1))
 ```
 
 <div style="text align: justify">Let's choose this range for train our autoencoder.</dev>
@@ -310,6 +311,7 @@ ae_plot <- ggplot(data = as.data.frame(ae_comp), aes(
 
 ae_plot
 ```
+<div style="text align: justify">The results are no good, as shown in the plot, the model trends to underfitting and the results leave it in clear, there's no need to say it, <span style="color:red;">the curve of the results don't adjust with the expectec values of test</span>,but with a little more exprimentation we can get a better model to reach our objectives.</dev>
 
 ### Cross validation
 
@@ -378,11 +380,11 @@ average_mae_history <- data.frame(
 ## better number of epochs
 ggplot(average_mae_history, aes(x = epoch, y = validation_mae)) + geom_smooth() +
   geom_vline(xintercept = seq(0,500,25), colour="darkgrey", alpha=0.4)+
-  geom_vline(xintercept = 112, colour="red")
+  geom_vline(xintercept = 111, colour="red")
 ```
 
 
-<div style="text align: justify">The plot tell us that beyond the 112 epochs, the model starts to overfitting and then the curve flattens, so we can use this number as the optimal.</dev>
+<div style="text align: justify">The plot tell us that beyond the 111 epochs, the model starts to overfitting and then the curve flattens, so we can use this number as the optimal.</dev>
 
 ## Models with the optimal number of epochs.
 <div style="text align: justify">Once we have defined an optimal number of epochs, we can check what optimizer gets a better result. The most populars for regression tasks are <mark>rmsprop</mark> and <mark>adam</mark> optimizer, so let's try whit these two. Aggregate to this we now reduce the number of <mark>neurons</mark> for the bottle neck of the autoencoder.</dev>
@@ -392,9 +394,9 @@ ggplot(average_mae_history, aes(x = epoch, y = validation_mae)) + geom_smooth() 
 ```{r , echo=TRUE, warning=FALSE, message=FALSE}
 ## same as the first one model, but with optimal
 ## number of epochs
+set.seed(2021)
 
-
-epochs <- 112
+epochs <- 111
 
 model1 <- keras_model_sequential()
 
@@ -449,6 +451,7 @@ ae_plot_1
 ### Adam optimizer
 
 ```{r , echo=TRUE}
+set.seed(2021)
 model2 <- keras_model_sequential()
 
 model2 %>% layer_dense(units = 5, input_shape = ncol(x), 
@@ -502,11 +505,27 @@ ae_plot_2
 # Comparing results
 
 ```{r , echo=TRUE}
-
 cat("The mae for the model of with rmsprops optimizer is:", mae1[1], 
     "\n and for the model with adam optimizer is:", mae2[1])
+```
+
+```{r , echo=TRUE, message=FALSE,warning=FALSE}
 
 grid.arrange(ae_plot_1, ae_plot_2)
 ```
+<div style="text align: justify">That's interesting, and as we can see the optimizer affects in a very strong way the learning of our model (beginning with the fact that we use the defauls params of each one), in the next table there's a listing of some of the paramaters:</dev>
+
+
+Optimizer    param1      param2       param3         result
+---------    --------    ---------    -----------    ---------------
+rmsprop      lr=0.001    rho=0.9      decay=0        mae=`r mae1[1]`
+adam         lr=0.001    beta1=0.9    beta2=0.999    mae=`r mae2[1]`
+
+```{r , echo=FALSE, eval=TRUE,include=FALSE,warning=FALSE,message=FALSE}
+difmae <- mae1[1]-mae2[1]
+```
+
+
+<div style="text align: justify">We can conclude that the adam optimizer give us better results than the rmsprop optimizer for this type of data. As shown in the last plot, the curve adjust with more accuracy in the adam optimizer plot. And the mae sugest that there's a better performance with it, although there is not a big difference between the two metrics, there is hardly `r difmae`.</dev>
 
 
