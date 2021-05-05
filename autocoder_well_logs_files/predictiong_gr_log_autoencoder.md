@@ -481,8 +481,8 @@ mae
 ```
 
 ```
-##       loss        mse 
-## 0.08568274 0.01850842
+##        loss         mse 
+## 0.051131550 0.008318173
 ```
 
 ```r
@@ -664,8 +664,8 @@ mae1
 ```
 
 ```
-##       loss        mse 
-## 0.05374057 0.00838880
+##        loss         mse 
+## 0.032730363 0.003710384
 ```
 
 ```r
@@ -757,7 +757,7 @@ mae2
 
 ```
 ##        loss         mse 
-## 0.032643124 0.003745955
+## 0.032537755 0.003740873
 ```
 
 ```r
@@ -798,8 +798,8 @@ cat("The mae for the model of with rmsprops optimizer is:", mae1[1],
 ```
 
 ```
-## The mae for the model of with rmsprops optimizer is: 0.05374057 
-##  and for the model with adam optimizer is: 0.03264312
+## The mae for the model of with rmsprops optimizer is: 0.03273036 
+##  and for the model with adam optimizer is: 0.03253775
 ```
 
 
@@ -813,12 +813,12 @@ grid.arrange(ae_plot_1, ae_plot_2)
 
 Optimizer    param1      param2       param3         result
 ---------    --------    ---------    -----------    ---------------
-rmsprop      lr=0.001    rho=0.9      decay=0        mae=0.0537406
-adam         lr=0.001    beta1=0.9    beta2=0.999    mae=0.0326431
+rmsprop      lr=0.001    rho=0.9      decay=0        mae=0.0327304
+adam         lr=0.001    beta1=0.9    beta2=0.999    mae=0.0325378
 
 
 
 
-<div style="text align: justify">We can conclude that the adam optimizer give us better results than the rmsprop optimizer for this type of data. As shown in the last plot, the curve adjust with more accuracy in the adam optimizer plot. And the mae sugest that there's a better performance with it, although there is not a big difference between the two metrics, there is hardly 0.0210974.</dev>
+<div style="text align: justify">We can conclude that the adam optimizer give us better results than the rmsprop optimizer for this type of data. As shown in the last plot, the curve adjust with more accuracy in the adam optimizer plot. And the mae sugest that there's a better performance with it, although there is not a big difference between the two metrics, there is hardly 1.9260868\times 10^{-4}.</dev>
 
 
